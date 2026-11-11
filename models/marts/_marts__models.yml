@@ -3,33 +3,184 @@ version: 2
 models:
   - name: fct_orders
     description: >
-      Факт заказов: одна строка — один заказ. Тестовые заказы исключены.
-      К заказу пристыкованы итоги по платежам; подтверждённая покупка — статус paid
-      и хотя бы одна успешная оплата (возврат оплатой не считается).
+      Факт заказов: одна строка — один заказ. Тестовые заказы в витрину не попадают.
+      К заказу пристыкованы итоги по платежам и число разных товаров.
+      По этой витрине считают выручку по дням и месяцам и средний чек по городам.
     columns:
       - name: order_id
         description: "Номер заказа."
         data_tests: [unique, not_null]
       - name: customer_id
         description: "Клиент, оформивший заказ."
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_customers')
+                field: customer_id
       - name: order_date
         description: "Дата заказа."
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_dates')
+                field: date_day
       - name: ordered_at
         description: "Время оформления заказа."
       - name: order_status
-        description: "Статус заказа: paid, pending, returned, cancelled."
+        description: "Статус заказа: paid, pending, returned или cancelled."
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['paid', 'pending', 'returned', 'cancelled']
       - name: order_amount
         description: "Сумма заказа в рублях после скидок."
+        data_tests: [non_negative]
+      - name: items_count
+        description: "Число разных товаров в заказе."
+        data_tests: [non_negative]
       - name: paid_amount
-        description: "Сумма успешных оплат без возвратов; 0, если оплат нет."
+        description: "Сумма успешных оплат без возвратов; 0, если оплат не было."
+        data_tests: [non_negative]
       - name: refunded_amount
-        description: "Сумма возвратов положительным числом; 0, если возвратов нет."
+        description: "Сумма возвратов, записана положительным числом; 0, если возвратов не было."
       - name: net_paid_amount
         description: "Оплачено минус возвращено."
       - name: successful_payments_count
         description: "Число успешных оплат без возвратов."
       - name: first_paid_at
-        description: "Время первой успешной оплаты; пусто, если оплат нет."
+        description: "Время первой успешной оплаты; пусто, если оплат не было."
       - name: is_confirmed
-        description: "Подтверждённая покупка: статус paid и хотя бы одна успешная оплата."
+        description: '{{ doc("confirmed_order") }}'
         data_tests: [not_null]
+
+  - name: fct_order_items
+    description: >
+      Факт позиций: одна строка — один товар в заказе. Позиции тестовых заказов исключены.
+      По этой витрине считают выручку по товарам, категориям и брендам.
+    columns:
+      - name: order_item_id
+        description: "Ключ позиции вида 101-1: номер заказа и номер товара через дефис."
+        data_tests: [unique, not_null]
+      - name: order_id
+        description: "Заказ, в который входит позиция."
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('fct_orders')
+                field: order_id
+      - name: product_id
+        description: "Товар."
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_products')
+                field: product_id
+      - name: customer_id
+        description: "Клиент, оформивший заказ."
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_customers')
+                field: customer_id
+      - name: order_date
+        description: "Дата заказа."
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_dates')
+                field: date_day
+      - name: quantity
+        description: "Сколько штук товара в позиции."
+        data_tests: [non_negative]
+      - name: unit_price
+        description: "Цена за штуку."
+        data_tests: [non_negative]
+      - name: discount_amount
+        description: "Скидка на позицию в рублях."
+        data_tests: [non_negative]
+      - name: line_amount
+        description: "Сумма позиции после скидки: количество умножить на цену и вычесть скидку."
+        data_tests: [non_negative]
+      - name: is_confirmed
+        description: '{{ doc("confirmed_order") }}'
+        data_tests: [not_null]
+
+  - name: dim_customers
+    description: >
+      Измерение клиентов: одна строка — один клиент, в том числе те, кто ничего не купил.
+      Рядом с данными клиента лежат итоги по его подтверждённым покупкам.
+      По этой витрине считают долю покупателей по каналам привлечения.
+    columns:
+      - name: customer_id
+        description: "Номер клиента."
+        data_tests: [unique, not_null]
+      - name: registered_at
+        description: "Время регистрации."
+      - name: registration_date
+        description: "Дата регистрации без времени."
+      - name: city
+        description: "Город клиента."
+      - name: acquisition_channel
+        description: "Канал привлечения: search, email, organic и другие."
+      - name: first_confirmed_order_id
+        description: "Номер первой подтверждённой покупки; пусто, если покупок не было."
+      - name: first_confirmed_at
+        description: "Время первой подтверждённой покупки; пусто, если покупок не было."
+      - name: confirmed_orders_count
+        description: "Сколько у клиента подтверждённых покупок; 0, если ни одной."
+        data_tests: [non_negative]
+      - name: confirmed_revenue
+        description: "На какую сумму клиент купил; 0, если покупок не было."
+        data_tests: [non_negative]
+      - name: is_buyer
+        description: "Покупатель: есть хотя бы одна подтверждённая покупка."
+        data_tests: [not_null]
+
+  - name: dim_products
+    description: >
+      Измерение товаров: одна строка — один товар. Иерархия категорий развёрнута
+      в три колонки, чтобы считать выручку сразу по любому уровню.
+    columns:
+      - name: product_id
+        description: "Номер товара."
+        data_tests: [unique, not_null]
+      - name: product_name
+        description: "Название товара."
+      - name: brand
+        description: "Бренд."
+      - name: category_name
+        description: "Категория, к которой привязан товар."
+        data_tests: [not_null]
+      - name: parent_category_name
+        description: "Родительская категория; пусто, если товар привязан к верхнему уровню."
+      - name: root_category_name
+        description: "Самый верхний уровень дерева: Electronics или Home."
+        data_tests: [not_null]
+
+  - name: dim_dates
+    description: >
+      Календарь: одна строка — один день. Покрывает все дни от первого до последнего заказа.
+      Нужен, чтобы группировать выручку по месяцам и кварталам и сравнивать будни с выходными.
+      Дни генерирует макрос dbt_utils.date_spine.
+    columns:
+      - name: date_day
+        description: "Дата."
+        data_tests: [unique, not_null]
+      - name: year
+        description: "Год."
+      - name: quarter
+        description: "Квартал, от 1 до 4."
+      - name: month
+        description: "Номер месяца, от 1 до 12."
+      - name: month_start
+        description: "Первый день месяца; по нему удобно группировать выручку по месяцам."
+      - name: day_of_week
+        description: "День недели: 1 — понедельник, 7 — воскресенье."
+      - name: is_weekend
+        description: "Выходной: суббота или воскресенье."

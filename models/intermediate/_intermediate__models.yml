@@ -3,11 +3,14 @@ version: 2
 models:
   - name: int_orders_with_payments
     description: >
-      Одна строка — один заказ (включая тестовые), к нему пристыкованы итоги по платежам.
-      Платежи сначала свёрнуты до заказа, потом присоединены left join: заказ без платежей не теряется.
+      Одна строка — один заказ, включая тестовые. К заказу пристыкованы итоги по платежам
+      и число разных товаров. Платежи и позиции сначала свёрнуты до заказа, и только потом
+      присоединены через left join, иначе строки размножились бы и суммы поехали.
     columns:
       - name: order_id
         description: "Номер заказа."
+      - name: items_count
+        description: "Число разных товаров в заказе."
       - name: successful_payments_count
         description: "Число успешных оплат без возвратов."
       - name: paid_amount
@@ -17,10 +20,55 @@ models:
       - name: net_paid_amount
         description: "Оплачено минус возвращено."
       - name: is_confirmed
-        description: "Подтверждённая покупка: статус paid и хотя бы одна успешная оплата."
+        description: '{{ doc("confirmed_order") }}'
       - name: success_operations_count
         description: "Число операций в статусе success, включая возвраты."
       - name: failed_operations_count
         description: "Число неуспешных операций."
       - name: pending_operations_count
         description: "Число операций в ожидании."
+
+  - name: int_categories_tree
+    description: >
+      Дерево категорий, развёрнутое в плоскую таблицу: одна строка — одна категория,
+      рядом её родитель и самый верхний уровень. Сделано рекурсивным запросом,
+      поэтому если в справочнике появится четвёртый уровень, модель посчитает и его.
+    columns:
+      - name: category_id
+        description: "Номер категории."
+      - name: category_name
+        description: "Название категории."
+      - name: parent_category_name
+        description: "Название родительской категории; пусто у верхнего уровня."
+      - name: root_category_name
+        description: "Название самой верхней категории: Electronics или Home."
+      - name: category_level
+        description: "Уровень в дереве: 1 — верхний."
+
+  - name: int_order_items_with_orders
+    description: >
+      Одна строка — один товар в заказе. К позиции добавлены поля заказа: клиент, дата,
+      признак подтверждённой покупки и признак тестового заказа.
+    columns:
+      - name: order_item_id
+        description: "Ключ позиции."
+      - name: is_confirmed
+        description: '{{ doc("confirmed_order") }}'
+      - name: is_test_order
+        description: "Позиция тестового заказа; в витрину такие не попадают."
+
+  - name: int_customer_confirmed_orders
+    description: >
+      Одна строка — один клиент, у которого есть хотя бы одна подтверждённая покупка.
+      Клиентов без покупок здесь нет, они добавляются уже в dim_customers через left join.
+    columns:
+      - name: customer_id
+        description: "Номер клиента."
+      - name: confirmed_orders_count
+        description: "Число подтверждённых покупок."
+      - name: confirmed_revenue
+        description: "Сумма подтверждённых покупок."
+      - name: first_confirmed_order_id
+        description: "Номер первой подтверждённой покупки. Если два заказа оформлены в одно время, берётся меньший номер."
+      - name: first_confirmed_at
+        description: "Время оформления первой подтверждённой покупки."
